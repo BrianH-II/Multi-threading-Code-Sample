@@ -1,0 +1,190 @@
+using System;
+using System.ComponentModel;
+using System.Drawing;
+using System.Threading;
+using System.Windows.Forms;
+
+namespace MultithreadingCounter
+{
+    public partial class GUI : Form
+    {
+        private Label header = new Label();
+        private Label header2 = new Label();
+        private Label[] counters = new Label[4];
+        private Label[] percentages = new Label[4];
+        private TextBox[] boxes = new TextBox[4];
+        private Button[] buttons = new Button[4];
+        private BackgroundWorker[] workers = new BackgroundWorker[4];
+
+        /*
+         * This program demonstrates multi-threading.
+         * Using this program, the user can have the computer count from 0 to any positive integer less than 1M.
+         * While counting, the user can initialte another count on a seperate thread. This can be done up to 3 times, resulting in 4 simultaneous counts.
+         * The main thread will continue to update the user on the progress (percentage complete) of the counts, as well as show the counts in real time.
+         */
+
+        public GUI()
+        {
+
+            this.Text = "Multi-Thread Counter";
+            this.ClientSize = new Size(450, 650);
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+
+            header.Font = new Font("Times New Roman", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            header.AutoSize = true;
+            header.Text = "Enter a positive integer less than 1M into a textbox and select \"Start\".";
+            this.Controls.Add(header);
+            header.Location = new Point((ClientSize.Width - header.Width) / 2, 0);
+
+            header2.Font = new Font("Times New Roman", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            header2.AutoSize = true;
+            header2.Text = "The program will begin counting on a separate thread.";
+            this.Controls.Add(header2);
+            header2.Location = new Point((ClientSize.Width - header2.Width) / 2, 25);
+
+            for (int i = 0; i < 4; i++) { counters[i] = new Label(); }
+            counters[0].Location = new Point(115, 75);
+            counters[1].Location = new Point(315, 75);
+            counters[2].Location = new Point(115, 375);
+            counters[3].Location = new Point(315, 375);
+
+            for (int i = 0; i < 4; i++)
+            {
+                counters[i].Font = new Font("Times New Roman", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+                counters[i].AutoSize = true;
+                counters[i].Text = "0";
+                this.Controls.Add(counters[i]);
+
+                boxes[i] = new TextBox();
+                boxes[i].Size = new Size(100, 50);
+                boxes[i].Font = new Font("Times New Roman", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+                boxes[i].Location = new Point(counters[i].Location.X - 40, counters[i].Location.Y + 50);
+                this.Controls.Add(boxes[i]);
+
+                percentages[i] = new Label();
+                percentages[i].AutoSize = true;
+                percentages[i].Font = new Font("Times New Roman", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+                percentages[i].Text = "0% Complete";
+                percentages[i].Location = new Point(counters[i].Location.X - 40, counters[i].Location.Y + 100);
+                this.Controls.Add(percentages[i]);
+
+                buttons[i] = new Button();
+                buttons[i].Size = new Size(150, 100);
+                buttons[i].Location = new Point(counters[i].Location.X - 65, counters[i].Location.Y + 150);
+                buttons[i].Font = new Font("Times New Roman", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+                buttons[i].Text = "Start";
+                buttons[i].Click += new EventHandler(button_Click);
+                this.Controls.Add(buttons[i]);
+
+                workers[i] = new BackgroundWorker();
+                workers[i].WorkerReportsProgress = true;
+                workers[i].WorkerSupportsCancellation = true;
+                workers[i].DoWork += new DoWorkEventHandler(worker_DoWork);
+                workers[i].ProgressChanged += new ProgressChangedEventHandler(worker_ProgressChanged);
+            }
+        }
+
+        private void button_Click(object sender, EventArgs e)
+        {
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                if (sender == buttons[i])
+                {
+                    if (buttons[i].Text == "Start")
+                    {
+                        if (!workers[i].IsBusy)
+                        {
+                            try
+                            {
+                                int[] args = new int[2];
+                                args[0] = i;
+                                args[1] = int.Parse(boxes[i].Text);
+
+                                if(args[1] < 1)
+                                {
+                                    throw new FormatException();
+                                }
+
+                                buttons[i].Text = "Cancel";
+                                workers[i].RunWorkerAsync(args);
+                            }
+                            //Since the goal of this program is simply to provide a multithreading example, I do not effectively handle these exceptions.
+                            //That is, I do not inform the user anything went wrong.
+                            //I simply catch these exceptions, then clear the textbox, allowing the user to enter an appropriate value.
+                            catch (FormatException) { boxes[i].Text = ""; }
+                            catch (OverflowException) { boxes[i].Text = ""; }
+                        }
+                    }
+                    else
+                    {
+                        workers[i].CancelAsync();
+                    }
+                }
+            }
+        }
+
+        private void worker_DoWork(object sender, DoWorkEventArgs e)
+        {
+            BackgroundWorker worker = (BackgroundWorker)sender;
+            int[] args = (int[])e.Argument;
+
+            int i = 0;
+            while (i <= args[1])
+            {
+                if (worker.CancellationPending)
+                {
+                    e.Cancel = true;
+                    worker.ReportProgress(-1);
+                    break;
+                }
+
+                if (counters[args[0]].InvokeRequired)
+                {
+                    counters[args[0]].BeginInvoke((MethodInvoker)delegate
+                    {
+                        counters[args[0]].Text = i.ToString();
+
+                    });
+                }
+                else
+                {
+                    counters[args[0]].Text = i.ToString();
+                }
+
+                worker.ReportProgress((int)((i * 100) / args[1]));
+
+                Thread.Sleep(500);
+                i++;
+            }
+        }
+
+        private void worker_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            int i = 0;
+
+            for (; i < 4; i++)
+            {
+                if (workers[i] == sender)
+                {
+                    break;
+                }
+            }
+
+            if (e.ProgressPercentage == -1)
+            {
+                percentages[i].Text = "User Cancelled";
+
+                buttons[i].Text = "Start";
+            }
+            else
+            {
+                percentages[i].Text = e.ProgressPercentage + "% Complete";
+            }
+
+            if(e.ProgressPercentage == 100)
+            {
+                buttons[i].Text = "Start";
+            }
+        }
+    }
+}
